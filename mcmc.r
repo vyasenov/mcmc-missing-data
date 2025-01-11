@@ -6,61 +6,42 @@
 
 rm(list=ls())
 set.seed(1988)
+library(mice)
 
-n <- 100
-X <- rnorm(n)
-Y <- 2 + 3 * X + rnorm(n, sd = 2)
-Y[sample(1:n, 20)] <- NA  # Introduce missing values
+# generate fake data
+n <- 100                     # Number of observations
+c <- 0.2                    # Proportion of missing values
+X <- rnorm(n, mean = 5, sd = 2)  # Predictor
+beta0 <- 2                   # True intercept
+beta1 <- 1.5                  # True slope
+epsilon <- rnorm(n, mean = 0, sd = 1)  # Error term
+Y <- beta0 + beta1 * X + epsilon        # Outcome variable
 
-##############
-############## CODE MCMC FUNCTION
-##############
+# introduce missingness in Y
+missing_indices <- sample(1:n, size = n * c, replace = FALSE)
+Y[missing_indices] <- NA  # 20% missing values
 
-# MCMC Imputation Function
-mcmc_impute <- function(X, Y, iter = 1000) {
-  n <- length(Y)
-  beta0 <- 0
-  beta1 <- 0
-  sigma2 <- 1
-
-  # Storage for parameters
-  beta0_samples <- numeric(iter)
-  beta1_samples <- numeric(iter)
-  sigma2_samples <- numeric(iter)
-
-  for (i in 1:iter) {
-    # Impute missing Y
-    Y[is.na(Y)] <- rnorm(sum(is.na(Y)), mean = beta0 + beta1 * X[is.na(Y)], sd = sqrt(sigma2))
-
-    # Update beta0 and beta1 using full data
-    lm_fit <- lm(Y ~ X)
-    beta0 <- coef(lm_fit)[1]
-    beta1 <- coef(lm_fit)[2]
-
-    # Update sigma2
-    residuals <- Y - (beta0 + beta1 * X)
-    sigma2 <- 1 / rgamma(1, shape = (n / 2), rate = sum(residuals^2) / 2)
-
-    # Store samples
-    beta0_samples[i] <- beta0
-    beta1_samples[i] <- beta1
-    sigma2_samples[i] <- sigma2
-  }
-
-  list(beta0 = beta0_samples, beta1 = beta1_samples, sigma2 = sigma2_samples)
-}
+# combine data into a data frame
+data <- data.frame(X = X, Y = Y)
+head(data)
 
 ##############
-############## RUN MCMC
+############## PERFORM MCMC IMPUTATION
 ##############
 
+imputed_data <- mice(data, 
+                    m = 5, 
+                    method = "norm", 
+                    seed = 1988)
 
-results <- mcmc_impute(X, Y)
+##############
+############## REGRESSION ON COMPLETED DATASET
+##############
+
+models <- with(imputed_data, lm(Y ~ X))
 
 ##############
 ############## PRINT RESULTS
 ##############
 
-summary(results$beta0)
-summary(results$beta1)
-summary(results$sigma2)
+summary(pool(models))
